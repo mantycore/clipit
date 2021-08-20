@@ -2,6 +2,7 @@ from DrawingInterface import DrawingInterface
 
 import pydiffvg
 import torch
+from torch.nn import functional as F
 import skimage
 import skimage.io
 import random
@@ -15,6 +16,7 @@ import PIL.Image
 
 pydiffvg.set_print_timing(False)
 
+# https://discuss.pytorch.or
 class PixelDrawer(DrawingInterface):
     num_rows = 45
     num_cols = 80
@@ -52,11 +54,7 @@ class PixelDrawer(DrawingInterface):
             cur_y = r * cell_height
             for c in range(num_cols):
                 cur_x = c * cell_width
-                if self.do_mono:
-                    mono_color = random.random()
-                    cell_color = torch.tensor([mono_color, mono_color, mono_color, 1.0])
-                else:
-                    cell_color = torch.tensor([random.random(), random.random(), random.random(), 1.0])
+                cell_color = torch.tensor([random.random(), random.random(), random.random(), 1.0])
                 colors.append(cell_color)
                 p0 = [cur_x, cur_y]
                 p1 = [cur_x+cell_width, cur_y+cell_height]
@@ -113,31 +111,51 @@ class PixelDrawer(DrawingInterface):
         scene_args = pydiffvg.RenderFunction.serialize_scene(\
             self.canvas_width, self.canvas_height, self.shapes, self.shape_groups)
         img = render(self.canvas_width, self.canvas_height, 2, 2, cur_iteration, None, *scene_args)
+        img_h, img_w = img.shape[0], img.shape[1]
         img = img[:, :, 3:4] * img[:, :, :3] + torch.ones(img.shape[0], img.shape[1], 3, device = self.device) * (1 - img[:, :, 3:4])
         img = img[:, :, :3]
+
+        if self.do_mono:
+            # transform this to mono-ish image (I made this up!)
+            darkness = img[:,:,1] - img[:,:,0]
+            darkness = darkness + torch.normal(0.0, 0.5, size=(img_h, img_w), device = self.device)
+            # sig_scale = torch.randn(size=(1,))[0]
+            # sig_scale = torch.rand(size=(img_h, img_w), device = self.device)
+            # img = torch.sigmoid(40 * sig_scale * darkness)
+            img = torch.sigmoid(40 * darkness)
+
+            # img = img[:,:,1] # use the green channel for now
+            # if cur_iteration > 0:
+            #     # gumbel time - add some gaussian noise to img
+            #     black = black + torch.normal(0.5, 0.1, size=(img_h, img_w), device = self.device)
+            # if cur_iteration == 0:
+            #     # threshold is 0.5 in "canonical" case
+            #     random_threshold = 0.5 * torch.ones(size=(img_h, img_w), device = self.device, requires_grad=True)
+            # else:
+            #     # threshold when training is a pixelwise approximate gaussian from [0,1]
+            #     random_threshold = torch.mean(torch.rand(size=(5, img_h, img_w), device = self.device, requires_grad=True), axis=0)
+            # pimg = PIL.Image.fromarray(np.uint8(random_bates*255), mode="L")
+            # pimg.save("bates_debug.png")
+            # img = torch.where(img > random_threshold, 1.0, 0.0, requires_grad=True)
+            img = torch.stack([img, img, img])
+            img = img.permute(1, 2, 0)
+            img.requres_grad = True
+
         img = img.unsqueeze(0)
         img = img.permute(0, 3, 1, 2) # NHWC -> NCHW
+        # if cur_iteration == 0:
+        #     print("SHAPE", img.shape)
+
         self.img = img
         return img
 
     @torch.no_grad()
     def to_image(self):
         img = self.img.detach().cpu().numpy()[0]
-        if self.do_mono:
-            img = img[1] # take the green channel (they should all be the same)
-            s = img.shape
-            # threshold is an approximate gaussian from [0,1]
-            random_bates = np.average(np.random.uniform(size=(5, s[0], s[1])), axis=0)
-            # pimg = PIL.Image.fromarray(np.uint8(random_bates*255), mode="L")
-            # pimg.save("bates_debug.png")
-            img = np.where(img > random_bates, 1, 0)
-            img = np.uint8(img * 255)
-            pimg = PIL.Image.fromarray(img, mode="L")
-        else:
-            img = np.transpose(img, (1, 2, 0))
-            img = np.clip(img, 0, 1)
-            img = np.uint8(img * 254)
-            pimg = PIL.Image.fromarray(img, mode="RGB")
+        img = np.transpose(img, (1, 2, 0))
+        img = np.clip(img, 0, 1)
+        img = np.uint8(img * 255)
+        pimg = PIL.Image.fromarray(img, mode="RGB")
         return pimg
 
     def clip_z(self):
@@ -145,9 +163,6 @@ class PixelDrawer(DrawingInterface):
             for group in self.shape_groups:
                 group.fill_color.data[:3].clamp_(0.0, 1.0)
                 group.fill_color.data[3].clamp_(1.0, 1.0)
-                if self.do_mono:
-                    avg_amount = torch.mean(group.fill_color.data[:3])
-                    group.fill_color.data[:3] = avg_amount
 
     def get_z(self):
         return None
