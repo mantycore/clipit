@@ -107,6 +107,9 @@ class PixelDrawer(DrawingInterface):
         return 5
 
     def synth(self, cur_iteration):
+        if cur_iteration < 0:
+            return self.img
+
         render = pydiffvg.RenderFunction.apply
         scene_args = pydiffvg.RenderFunction.serialize_scene(\
             self.canvas_width, self.canvas_height, self.shapes, self.shape_groups)

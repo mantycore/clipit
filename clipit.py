@@ -32,6 +32,8 @@ import kornia.augmentation as K
 import numpy as np
 import imageio
 
+from einops import rearrange
+
 from PIL import ImageFile, Image, PngImagePlugin
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -197,6 +199,63 @@ def parse_prompt(prompt):
     # print(f"parsed vals is {vals}")
     return vals[0], float(vals[1]), float(vals[2])
 
+class BitmapQuantize(nn.Module):
+    """
+    VQ - you know, for pixels?
+    This version just maps everything to white or black
+    """
+    def __init__(self, n_embed=2, embedding_dim=3):
+        super().__init__()
+
+        # this doens't do anything yet, just thinking ahead
+
+        self.n_e = embedding_dim
+        self.e_dim = n_embed
+
+        self.embedding = nn.Embedding(self.n_e, self.e_dim)
+        self.embedding.weight.data.uniform_(-1.0 / self.n_e, 1.0 / self.n_e)
+
+    def forward(self, z):
+        B, C, H, W = z.size()
+
+        # print(B, C, H, W)
+
+        # project and flatten out space, so (B, C, H, W) -> (B*H*W, C)
+        # reshape z -> (batch, height, width, channel) and flatten
+        z = rearrange(z, 'b c h w -> b h w c').contiguous()
+        # print(z.size())
+        z_len = torch.sum(z, -1)
+        z_gray = z_len / 3.0;
+        z_q = torch.stack([z_gray, z_gray, z_gray], dim=-1)
+        
+        ## z_thresh = torch.where(z_len > 1.5, 1.0, 0.0)
+        ## z_q = torch.stack([z_thresh, z_thresh, z_thresh], dim=-1)
+        
+        # z_flattened = z.view(-1, self.e_dim)
+        # print(z_flattened.size())
+
+        # z_q = -z;
+
+        # preserve gradients
+        ## z_q = z + (z_q - z).detach()
+        # z_q = z
+
+        # reshape back to match original input shape
+        z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+        return z_q
+
+        # # vector quantization cost that trains the embedding vectors
+        # z_q = self.embed_code(ind) # (B, H, W, C)
+        # commitment_cost = 0.25
+        # diff = commitment_cost * (z_q.detach() - z_e).pow(2).mean() + (z_q - z_e.detach()).pow(2).mean()
+        # diff *= self.kld_scale
+
+        # z_q = z_e + (z_q - z_e).detach() # noop in forward pass, straight-through gradient estimator in backward pass
+        # z_q = z_q.permute(0, 3, 1, 2) # stack encodings into channels again: (B, C, H, W)
+        # return z_q, diff, ind
+
+    def embed_code(self, embed_id):
+        return F.embedding(embed_id, self.embedding.weight)
 
 from typing import cast, Dict, List, Optional, Tuple, Union
 
@@ -359,7 +418,7 @@ def do_init(args):
     global z_orig, z_targets, z_labels, init_image_tensor, target_image_tensor
     global gside_X, gside_Y, overlay_image_rgba
     global pmsTable, pmsImageTable, pImages, device, spotPmsTable, spotOffPmsTable
-    global drawer
+    global drawer, color_mapper
 
     # Do it (init that is)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -398,6 +457,9 @@ def do_init(args):
         if not cut_size in cutoutsTable:    
             make_cutouts = MakeCutouts(cut_size, args.num_cuts, cut_pow=args.cut_pow)
             cutoutsTable[cut_size] = make_cutouts
+
+    if args.color_mapper:
+        color_mapper = BitmapQuantize()
 
     init_image_tensor = None
     target_image_tensor = None
@@ -631,6 +693,7 @@ cur_anim_index=None
 anim_output_files=[]
 anim_cur_zs=[]
 anim_next_zs=[]
+color_mapper=None
 
 def make_gif(args, iter):
     gif_output = os.path.join(args.animation_dir, "anim.gif")
@@ -661,7 +724,11 @@ def checkin(args, iter, losses):
     tqdm.write(writestr)
     info = PngImagePlugin.PngInfo()
     info.add_text('comment', f'{args.prompts}')
-    img = drawer.to_image()
+    timg = drawer.synth(-1)
+    if color_mapper is not None:
+        timg = color_mapper(timg);
+    img = TF.to_pil_image(timg[0].cpu())
+    # img = drawer.to_image()
     if cur_anim_index is None:
         outfile = args.output
     else:
@@ -681,8 +748,11 @@ def ascend_txt(args):
     global cur_iteration, cur_anim_index, perceptors, normalize, cutoutsTable, cutoutSizeTable
     global z_orig, z_targets, z_labels, init_image_tensor, target_image_tensor, drawer
     global pmsTable, pmsImageTable, spotPmsTable, spotOffPmsTable, global_padding_mode
+    global color_mapper;
 
     out = drawer.synth(cur_iteration);
+    if color_mapper is not None:
+        out = color_mapper(out);
 
     result = []
 
@@ -1042,6 +1112,7 @@ def setup_parser():
     vq_parser.add_argument("-st",   "--strokes", type=int, help="clipdraw strokes", default=1024, dest='strokes')
     vq_parser.add_argument("-pd",   "--use_pixeldraw", type=bool, help="Use pixeldraw", default=False, dest='use_pixeldraw')
     vq_parser.add_argument("-mo",   "--do_mono", type=bool, help="Monochromatic", default=False, dest='do_mono')
+    vq_parser.add_argument("-cm",   "--color_mapper", type=bool, help="Color Mapping", default=False, dest='color_mapper')
 
     return vq_parser    
 
