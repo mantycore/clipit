@@ -199,7 +199,39 @@ def parse_prompt(prompt):
     # print(f"parsed vals is {vals}")
     return vals[0], float(vals[1]), float(vals[2])
 
-class BitmapQuantize(nn.Module):
+class GrayQuantize(nn.Module):
+    """
+    VQ - you know, for pixels?
+    This version just maps everything to gray (R=G=B)
+    """
+    def __init__(self, n_embed=2, embedding_dim=3):
+        super().__init__()
+        self.beta = 100.0
+
+    def forward(self, z):
+        B, C, H, W = z.size()
+
+        # print(B, C, H, W)
+
+        # project and flatten out space, so (B, C, H, W) -> (B*H*W, C)
+        # reshape z -> (batch, height, width, channel) and flatten
+        z = rearrange(z, 'b c h w -> b h w c').contiguous()
+        # print(z.size())
+        z_len = torch.sum(z, -1)
+        z_gray = z_len / 3.0;
+        z_q = torch.stack([z_gray, z_gray, z_gray], dim=-1)
+
+        loss = self.beta * torch.mean((z_q.detach()-z)**2) + \
+               torch.mean((z_q - z.detach()) ** 2)
+        
+        # reshape back to match original input shape
+        z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
+        return z_q, loss
+
+    def embed_code(self, embed_id):
+        return F.embedding(embed_id, self.embedding.weight)
+
+class MonoQuantize(nn.Module):
     """
     VQ - you know, for pixels?
     This version just maps everything to white or black
@@ -209,6 +241,7 @@ class BitmapQuantize(nn.Module):
 
         # this doens't do anything yet, just thinking ahead
 
+        self.beta = 10.0
         self.n_e = embedding_dim
         self.e_dim = n_embed
 
@@ -225,24 +258,22 @@ class BitmapQuantize(nn.Module):
         z = rearrange(z, 'b c h w -> b h w c').contiguous()
         # print(z.size())
         z_len = torch.sum(z, -1)
-        z_gray = z_len / 3.0;
-        z_q = torch.stack([z_gray, z_gray, z_gray], dim=-1)
+        # z_gray = z_len / 3.0;
+        # z_q = torch.stack([z_gray, z_gray, z_gray], dim=-1)
         
-        ## z_thresh = torch.where(z_len > 1.5, 1.0, 0.0)
-        ## z_q = torch.stack([z_thresh, z_thresh, z_thresh], dim=-1)
+        z_thresh = torch.where(z_len > 1.5, 1.0, 0.0)
+        z_q = torch.stack([z_thresh, z_thresh, z_thresh], dim=-1)
         
-        # z_flattened = z.view(-1, self.e_dim)
-        # print(z_flattened.size())
-
-        # z_q = -z;
+        loss = self.beta * torch.mean((z_q.detach()-z)**2) + \
+               torch.mean((z_q - z.detach()) ** 2)
 
         # preserve gradients
-        ## z_q = z + (z_q - z).detach()
+        z_q = z + (z_q - z).detach()
         # z_q = z
 
         # reshape back to match original input shape
         z_q = rearrange(z_q, 'b h w c -> b c h w').contiguous()
-        return z_q
+        return z_q, loss
 
         # # vector quantization cost that trains the embedding vectors
         # z_q = self.embed_code(ind) # (B, H, W, C)
@@ -324,7 +355,8 @@ class MakeCutouts(nn.Module):
 
         augmentations = []
         if global_aspect_width != 1:
-            n_s = 9/16
+            # n_s = 9/16
+            n_s = 1/global_aspect_width
         else:
             n_s = 0.95
         n_t = (1-n_s)/2
@@ -365,7 +397,11 @@ class MakeCutouts(nn.Module):
                 cutout[0][mask_indexes] = 0.5
 
             if global_aspect_width != 1:
-                cutout = kornia.geometry.transform.rescale(cutout, (1, 16/9))
+                if global_aspect_width > 1:
+                    cutout = kornia.geometry.transform.rescale(cutout, (1, global_aspect_width))
+                else:
+                    cutout = kornia.geometry.transform.rescale(cutout, (1/global_aspect_width, 1))
+
 
             # if cur_iteration % 50 == 0 and _ == 0:
             #     print(cutout.shape)
@@ -458,8 +494,14 @@ def do_init(args):
             make_cutouts = MakeCutouts(cut_size, args.num_cuts, cut_pow=args.cut_pow)
             cutoutsTable[cut_size] = make_cutouts
 
-    if args.color_mapper:
-        color_mapper = BitmapQuantize()
+    if args.color_mapper is not None:
+        if args.color_mapper == "gray":
+            color_mapper = GrayQuantize()
+        elif args.color_mapper == "mono":
+            color_mapper = MonoQuantize()
+        else:
+            print(f"Color mapper {args.color_mapper} not understood")
+            sys.exit(1)
 
     init_image_tensor = None
     target_image_tensor = None
@@ -726,7 +768,7 @@ def checkin(args, iter, losses):
     info.add_text('comment', f'{args.prompts}')
     timg = drawer.synth(-1)
     if color_mapper is not None:
-        timg = color_mapper(timg);
+        timg, closs = color_mapper(timg);
     img = TF.to_pil_image(timg[0].cpu())
     # img = drawer.to_image()
     if cur_anim_index is None:
@@ -751,10 +793,12 @@ def ascend_txt(args):
     global color_mapper;
 
     out = drawer.synth(cur_iteration);
-    if color_mapper is not None:
-        out = color_mapper(out);
 
     result = []
+
+    if color_mapper is not None:
+        out, c_loss = color_mapper(out);
+        result.append(c_loss);
 
     if (cur_iteration%2 == 0):
         global_padding_mode = 'reflection'
@@ -1112,7 +1156,7 @@ def setup_parser():
     vq_parser.add_argument("-st",   "--strokes", type=int, help="clipdraw strokes", default=1024, dest='strokes')
     vq_parser.add_argument("-pd",   "--use_pixeldraw", type=bool, help="Use pixeldraw", default=False, dest='use_pixeldraw')
     vq_parser.add_argument("-mo",   "--do_mono", type=bool, help="Monochromatic", default=False, dest='do_mono')
-    vq_parser.add_argument("-cm",   "--color_mapper", type=bool, help="Color Mapping", default=False, dest='color_mapper')
+    vq_parser.add_argument("-cm",   "--color_mapper", type=str, help="Color Mapping", default=None, dest='color_mapper')
 
     return vq_parser    
 
@@ -1184,6 +1228,13 @@ def process_args(vq_parser, namespace=None):
         'widescreen': [200, 112]
     }
 
+    if args.size is not None:
+        global_aspect_width = args.size[0] / args.size[1]
+    elif args.aspect == "widescreen":
+        global_aspect_width = 16/9
+    else:
+        global_aspect_width = 1
+
     # determine size if not set
     if args.size is None:
         size_scale = args.scale
@@ -1201,11 +1252,6 @@ def process_args(vq_parser, namespace=None):
         else:
             print("aspect not understood, aborting -> ", argz.aspect)
             exit(1)
-
-    if args.aspect == "widescreen":
-        global_aspect_width = 16/9
-    else:
-        global_aspect_width = 1
 
     if args.init_noise.lower() == "none":
         args.init_noise = None
