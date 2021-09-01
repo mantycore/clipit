@@ -317,7 +317,7 @@ class MakeCutouts(nn.Module):
             if global_aspect_width == 16/9:
                 cutout = kornia.geometry.transform.rescale(cutout, (1, 16/9))
             elif global_aspect_width == 9/16:
-                cutout = kornia.geometry.transform.rescale(cutout, (1, 9/16))
+                cutout = kornia.geometry.transform.rescale(cutout, (16/9, 1))
 
             # if cur_iteration % 50 == 0 and _ == 0:
             #     print(cutout.shape)
