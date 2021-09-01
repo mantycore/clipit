@@ -273,8 +273,8 @@ class MakeCutouts(nn.Module):
         augmentations = []
         if global_aspect_width == 16/9:
             n_s = 9/16
-        elif global_aspect_width = 9/16:
-            n_s = 16/
+        elif global_aspect_width == 9/16:
+            n_s = 16/9
         else:
             n_s = 0.95
         n_t = (1-n_s)/2
@@ -316,7 +316,7 @@ class MakeCutouts(nn.Module):
 
             if global_aspect_width == 16/9:
                 cutout = kornia.geometry.transform.rescale(cutout, (1, 16/9))
-            elif global_aspect_width = 9/16:
+            elif global_aspect_width == 9/16:
                 cutout = kornia.geometry.transform.rescale(cutour, (1, 9/16))
 
             # if cur_iteration % 50 == 0 and _ == 0:
