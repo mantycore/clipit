@@ -378,6 +378,8 @@ def do_init(args):
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, args.pixel_size, scale=args.pixel_scale)
         elif global_aspect_width == 1:
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, [40, 40], scale=args.pixel_scale)
+        elif global_aspect_width < 1:
+            drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, [80, 45], scale=args.pixel_scale)
         else:
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, scale=args.pixel_scale)
     else:
