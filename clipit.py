@@ -1161,6 +1161,8 @@ def process_args(vq_parser, namespace=None):
 
     if args.aspect == "widescreen":
         global_aspect_width = 16/9
+    elif args.aspect == "tallscreen:
+        global_aspect_width = 9/16
     else:
         global_aspect_width = 1
 
