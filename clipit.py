@@ -1053,7 +1053,7 @@ def setup_parser():
     vq_parser.add_argument("-ovo",  "--overlay_offset", type=int, help="Overlay image iteration offset", default=0, dest='overlay_offset')
     vq_parser.add_argument("-ovi",  "--overlay_image", type=str, help="Overlay image (if not init)", default=None, dest='overlay_image')
     vq_parser.add_argument("-qua",  "--quality", type=str, help="draft, normal, best", default="normal", dest='quality')
-    vq_parser.add_argument("-asp",  "--aspect", type=str, help="widescreen, square", default="widescreen", dest='aspect')
+    vq_parser.add_argument("-asp",  "--aspect", type=str, help="widescreen, tallscreen, square", default="widescreen", dest='aspect')
     vq_parser.add_argument("-ezs",  "--ezsize", type=str, help="small, medium, large", default=None, dest='ezsize')
     vq_parser.add_argument("-sca",  "--scale", type=float, help="scale (instead of ezsize)", default=None, dest='scale')
     vq_parser.add_argument("-ova",  "--overlay_alpha", type=int, help="Overlay alpha (0-255)", default=None, dest='overlay_alpha')    
@@ -1101,6 +1101,7 @@ def setup_parser():
 
 square_size = [144, 144]
 widescreen_size = [200, 112]  # at the small size this becomes 192,112
+tallscreen_size = [112, 200]
 
 ####### PALETTE SECTION ##########
 
@@ -1267,6 +1268,7 @@ def process_args(vq_parser, namespace=None):
     aspect_to_size_table = {
         'square': [150, 150],
         'widescreen': [200, 112]
+        'tallscreen': [112, 200]
     }
 
     # determine size if not set
@@ -1289,6 +1291,8 @@ def process_args(vq_parser, namespace=None):
 
     if args.aspect == "widescreen":
         global_aspect_width = 16/9
+    elif args.aspect = "tallscreen":
+        global_aspect_width = 9/16
     else:
         global_aspect_width = 1
 
