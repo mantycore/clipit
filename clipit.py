@@ -230,7 +230,7 @@ def fetch_spot_indexes(sideX, sideY):
     if cache_key not in cached_spot_indexes:
         if global_spot_file is not None:
             mask_image = Image.open(global_spot_file)
-        elif global_aspect_width != 1:
+        elif global_aspect_width != 1: #TODO: spot_tall for 9/16?
             mask_image = Image.open("inputs/spot_wide.png")
         else:
             mask_image = Image.open("inputs/spot_square.png")
@@ -271,8 +271,10 @@ class MakeCutouts(nn.Module):
         self.augs_zoom = nn.Sequential(*augmentations)
 
         augmentations = []
-        if global_aspect_width != 1:
+        if global_aspect_width == 16/9:
             n_s = 9/16
+        elif global_aspect_width = 9/16:
+            n_s = 16/
         else:
             n_s = 0.95
         n_t = (1-n_s)/2
@@ -312,8 +314,10 @@ class MakeCutouts(nn.Module):
             if mask_indexes is not None:
                 cutout[0][mask_indexes] = 0.5
 
-            if global_aspect_width != 1:
+            if global_aspect_width == 16/9:
                 cutout = kornia.geometry.transform.rescale(cutout, (1, 16/9))
+            elif global_aspect_width = 9/16:
+                cutout = kornia.geometry.transform.rescale(cutour, (1, 9/16))
 
             # if cur_iteration % 50 == 0 and _ == 0:
             #     print(cutout.shape)
@@ -378,7 +382,7 @@ def do_init(args):
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, args.pixel_size, scale=args.pixel_scale)
         elif global_aspect_width == 1:
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, [40, 40], scale=args.pixel_scale)
-        elif global_aspect_width < 1:
+        elif global_aspect_width == 9/16:
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, [45, 80], scale=args.pixel_scale)
         else:
             drawer = PixelDrawer(args.size[0], args.size[1], args.do_mono, scale=args.pixel_scale)
