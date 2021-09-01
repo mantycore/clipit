@@ -282,7 +282,7 @@ class MakeCutouts(nn.Module):
         if global_aspect_width == 9/16:
             augmentations.append(K.RandomAffine(degrees=0, translate=(n_t, 0), scale=(n_s, 0.9*n_s), p=1.0, return_transform=True))
         else:
-            augmentations.append(K.RandomAffine(degrees=0, translate=(0, n_t), scale=(0.9*n_s, n_s), p=1.0, return_transform=True))
+            augmentations.append(K.RandomAffine(degrees=0, translate=(0, n_t), scale=(n_s, 0.9*n_s), p=1.0, return_transform=True))
         augmentations.append(K.CenterCrop(size=self.cut_size, cropping_mode='resample', p=1.0, return_transform=True))
         augmentations.append(K.RandomPerspective(distortion_scale=0.20, p=0.7, return_transform=True))
         augmentations.append(K.ColorJitter(hue=0.1, saturation=0.1, p=0.8, return_transform=True))
