@@ -1267,7 +1267,7 @@ def process_args(vq_parser, namespace=None):
     }
     aspect_to_size_table = {
         'square': [150, 150],
-        'widescreen': [200, 112]
+        'widescreen': [200, 112],
         'tallscreen': [112, 200]
     }
 
